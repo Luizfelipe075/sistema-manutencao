@@ -1,0 +1,20 @@
+{
+  "name": "api-ocorrencias-manutencao",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API REST + interface web para gestão de ocorrências de manutenção em uma rede de unidades.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "db:reset": "node src/db/reset.js",
+    "prova": "node scripts/roteiro-prova.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "swagger-ui-dist": "^5.17.14"
+  }
+}

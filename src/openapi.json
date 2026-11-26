@@ -1,0 +1,246 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "API de Ocorrências de Manutenção",
+    "version": "1.0.0",
+    "description": "API REST para registrar e acompanhar ocorrências de manutenção em uma rede de unidades. Implementa as regras RN1 a RN10 do estudo de caso 05A.\n\nComo testar: execute POST /auth/login com uma conta de demonstração (senha Demo@123), copie o token da resposta, clique em Authorize e cole o token (sem a palavra Bearer)."
+  },
+  "servers": [
+    { "url": "/api/v1", "description": "Servidor atual (mesmo host e porta desta página)" }
+  ],
+  "tags": [
+    { "name": "Autenticação" },
+    { "name": "Catálogo" },
+    { "name": "Ocorrências" },
+    { "name": "Atendimento" },
+    { "name": "Histórico e indicadores" }
+  ],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["Autenticação"],
+        "summary": "Autentica um usuário",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" }, "example": { "email": "solicitante@demo.local", "password": "Demo@123" } } }
+        },
+        "responses": {
+          "200": { "description": "Credenciais válidas; retorna token Bearer e perfil." },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Autenticação"],
+        "summary": "Retorna o usuário autenticado e suas unidades",
+        "responses": { "200": { "description": "Dados do usuário." }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      }
+    },
+    "/unidades": {
+      "get": {
+        "tags": ["Catálogo"],
+        "summary": "Lista somente as unidades liberadas ao usuário",
+        "responses": { "200": { "description": "Unidades disponíveis no escopo do token." }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      }
+    },
+    "/tecnicos": {
+      "get": {
+        "tags": ["Catálogo"],
+        "summary": "Lista técnicos habilitados para uma unidade",
+        "parameters": [{ "name": "unidadeId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }],
+        "responses": { "200": { "description": "Técnicos internos e terceirizados da unidade." }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/ocorrencias": {
+      "get": {
+        "tags": ["Ocorrências"],
+        "summary": "Lista ocorrências das unidades autorizadas",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "prioridade", "in": "query", "schema": { "type": "string", "enum": ["BAIXA", "MEDIA", "ALTA", "CRITICA"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "Lista paginada e limitada pelo escopo de unidades." }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      },
+      "post": {
+        "tags": ["Ocorrências"],
+        "summary": "Abre um chamado (RN1)",
+        "description": "Solicitante, supervisor ou responsável de unidade pode abrir ocorrência apenas em unidade vinculada ao próprio usuário.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOccurrenceRequest" } } } },
+        "responses": { "201": { "description": "Ocorrência criada com status ABERTA." }, "400": { "$ref": "#/components/responses/BadRequest" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/ocorrencias/{id}": {
+      "get": {
+        "tags": ["Ocorrências"],
+        "summary": "Consulta uma ocorrência (RN10)",
+        "description": "A consulta retorna 404 quando o registro não existe ou pertence a unidade fora do escopo do usuário, evitando revelar sua existência.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "responses": { "200": { "description": "Detalhes, técnico, atendimentos, relações, status e tempo de atendimento." }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/ocorrencias/{id}/relacionadas": {
+      "post": {
+        "tags": ["Ocorrências"],
+        "summary": "Relaciona chamados duplicados (RN2)",
+        "description": "Exige perfil SUPERVISOR, confirmação explícita do mesmo problema e igualdade de unidade e local.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["relatedOccurrenceId", "confirmedSameProblem"], "properties": { "relatedOccurrenceId": { "type": "string", "format": "uuid" }, "confirmedSameProblem": { "type": "boolean", "enum": [true] } }, "example": { "relatedOccurrenceId": "uuid-da-outra-ocorrencia", "confirmedSameProblem": true } } } } },
+        "responses": { "201": { "description": "Relação de duplicidade registrada nos dois chamados." }, "400": { "$ref": "#/components/responses/BadRequest" }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/prioridade": {
+      "patch": {
+        "tags": ["Ocorrências"],
+        "summary": "Define a prioridade (RN3)",
+        "description": "Operação exclusiva do supervisor.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["priority"], "properties": { "priority": { "type": "string", "enum": ["BAIXA", "MEDIA", "ALTA", "CRITICA"] } }, "example": { "priority": "ALTA" } } } } },
+        "responses": { "200": { "description": "Prioridade atualizada e registrada no histórico." }, "400": { "$ref": "#/components/responses/BadRequest" }, "403": { "$ref": "#/components/responses/Forbidden" } }
+      }
+    },
+    "/ocorrencias/{id}/atribuicao": {
+      "put": {
+        "tags": ["Ocorrências"],
+        "summary": "Atribui técnico responsável (RN4)",
+        "description": "Somente supervisor. A prioridade precisa estar definida e o técnico precisa ter acesso à unidade da ocorrência. A atribuição inicia o status EM_ATENDIMENTO.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["technicianId"], "properties": { "technicianId": { "type": "string" } }, "example": { "technicianId": "user-tecnico-01" } } } } },
+        "responses": { "200": { "description": "Técnico atribuído." }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/atendimentos": {
+      "post": {
+        "tags": ["Atendimento"],
+        "summary": "Registra diagnóstico e solução (RN5)",
+        "description": "Exclusivo do técnico atribuído enquanto o chamado estiver EM_ATENDIMENTO.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["diagnosis", "solution"], "properties": { "diagnosis": { "type": "string", "maxLength": 1500 }, "solution": { "type": "string", "maxLength": 2000 }, "performedAt": { "type": "string", "format": "date-time" } }, "example": { "diagnosis": "Disjuntor do quadro desarmado após oscilação.", "solution": "Disjuntor substituído e alimentação normalizada." } } } } },
+        "responses": { "201": { "description": "Atendimento registrado no histórico." }, "400": { "$ref": "#/components/responses/BadRequest" }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/pausas": {
+      "post": {
+        "tags": ["Atendimento"],
+        "summary": "Registra pausa do atendimento (RN6)",
+        "description": "Técnico atribuído ou supervisor pode pausar chamado EM_ATENDIMENTO. O início é registrado pelo servidor.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["reason"], "properties": { "reason": { "type": "string", "maxLength": 500 } }, "example": { "reason": "Aguardando chegada de peça de reposição." } } } } },
+        "responses": { "201": { "description": "Pausa criada e status alterado para PAUSADA." }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/retomadas": {
+      "post": {
+        "tags": ["Atendimento"],
+        "summary": "Encerra pausa e retoma atendimento",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "responses": { "200": { "description": "Pausa encerrada e status retornado para EM_ATENDIMENTO." }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/finalizacao": {
+      "post": {
+        "tags": ["Atendimento"],
+        "summary": "Encaminha chamado para confirmação da unidade (RN7)",
+        "description": "Exclusivo do técnico atribuído. Exige atendimento com solução registrada e status EM_ATENDIMENTO.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "responses": { "200": { "description": "Status alterado para AGUARDANDO_CONFIRMACAO." }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/confirmacoes": {
+      "post": {
+        "tags": ["Atendimento"],
+        "summary": "Registra aceite da unidade (RN8)",
+        "description": "Somente RESPONSAVEL_UNIDADE. Se confirmed=true, encerra. Se false, exige motivo e devolve para EM_ATENDIMENTO.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["confirmed"], "properties": { "confirmed": { "type": "boolean" }, "reason": { "type": "string", "maxLength": 500 } }, "example": { "confirmed": true } } } } },
+        "responses": { "200": { "description": "Decisão da unidade registrada." }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/reaberturas": {
+      "post": {
+        "tags": ["Ocorrências"],
+        "summary": "Reabre um chamado encerrado (RN9)",
+        "description": "Responsável da unidade ou supervisor informa motivo. Atendimentos e eventos anteriores são preservados.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["reason"], "properties": { "reason": { "type": "string", "maxLength": 500 } }, "example": { "reason": "A queda de energia voltou no mesmo local." } } } } },
+        "responses": { "200": { "description": "Status REABERTA e evento preservado no histórico." }, "403": { "$ref": "#/components/responses/Forbidden" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/ocorrencias/{id}/anexos": {
+      "get": {
+        "tags": ["Ocorrências"],
+        "summary": "Lista anexos conforme o perfil (RN10)",
+        "description": "Usuário terceirizado não recebe anexos marcados UNIT_ONLY. O conteúdo binário não é enviado por esta API demonstrativa; o recurso controla metadados e visibilidade.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "responses": { "200": { "description": "Metadados de anexos visíveis ao usuário." }, "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "post": {
+        "tags": ["Ocorrências"],
+        "summary": "Registra metadados de um anexo",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["fileName"], "properties": { "fileName": { "type": "string" }, "description": { "type": "string" }, "visibility": { "type": "string", "enum": ["PUBLIC", "UNIT_ONLY"] } }, "example": { "fileName": "foto-quadro-eletrico.jpg", "description": "Imagem do quadro", "visibility": "UNIT_ONLY" } } } } },
+        "responses": { "201": { "description": "Metadados registrados." }, "403": { "$ref": "#/components/responses/Forbidden" } }
+      }
+    },
+    "/ocorrencias/{id}/historico": {
+      "get": {
+        "tags": ["Histórico e indicadores"],
+        "summary": "Consulta o histórico de alterações",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "responses": { "200": { "description": "Eventos com responsável e data." }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/ocorrencias/{id}/indicadores": {
+      "get": {
+        "tags": ["Histórico e indicadores"],
+        "summary": "Consulta os tempos do atendimento",
+        "description": "A duração em atendimento é calculada pela linha do tempo de status, excluindo períodos PAUSADA e ENCERRADA. O indicador é atualizado a cada consulta.",
+        "parameters": [{ "$ref": "#/components/parameters/OccurrenceId" }],
+        "responses": { "200": { "description": "Tempo ativo, tempo pausado, pausas e reaberturas." }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "parameters": {
+      "OccurrenceId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": { "email": { "type": "string", "format": "email" }, "password": { "type": "string", "minLength": 1 } }
+      },
+      "CreateOccurrenceRequest": {
+        "type": "object",
+        "required": ["unitId", "description", "location", "occurredAt"],
+        "properties": {
+          "unitId": { "type": "integer", "minimum": 1 },
+          "description": { "type": "string", "maxLength": 2000 },
+          "location": { "type": "string", "maxLength": 180 },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "category": { "type": "string", "maxLength": 100 }
+        },
+        "example": { "unitId": 1, "description": "Queda de energia no bloco administrativo.", "location": "Prédio Administrativo", "occurredAt": "2026-11-25T14:30:00.000Z", "category": "ELÉTRICA" }
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "object", "properties": { "code": { "type": "string" }, "message": { "type": "string" } }, "required": ["code", "message"] } }
+      }
+    },
+    "responses": {
+      "BadRequest": { "description": "Entrada inválida.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unauthorized": { "description": "Token ausente, inválido ou expirado.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "Perfil sem autorização para a operação.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "Recurso inexistente ou fora do escopo de acesso.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Conflict": { "description": "Regra de negócio ou estado atual impede a operação.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    }
+  },
+  "security": [{ "BearerAuth": [] }]
+}
